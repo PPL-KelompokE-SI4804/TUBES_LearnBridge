@@ -48,9 +48,6 @@ Ganti semua kata sandi demo sebelum aplikasi dipakai di luar komputer lokal.
 
 ## Modul yang tersedia
 
-- PBI 1: pelajar mengubah profil, mengatur visibilitas profil dan sertifikat, serta membuka profil publik.
-- PBI 2: institusi mengubah profil, mengatur visibilitas profil dan sertifikat peserta dari programnya, serta menampilkan profil publik setelah terverifikasi.
-- PBI 3: pelajar menambah, melihat, mengubah, dan menghapus keterampilan; duplikat dicegah dan keterampilan tampil pada profil publik jika profil dibuka.
 - Login, pendaftaran akun, dashboard berbasis peran, profil profesional, dan pengaturan visibilitas.
 - Pengelolaan akun, institusi dan verifikasi, keterampilan, kategori, kursus, bootcamp, materi, serta pendaftaran.
 - Progres dan catatan belajar, kuis pilihan ganda, forum, komentar, ulasan dan rating, pengumuman, serta laporan konten.

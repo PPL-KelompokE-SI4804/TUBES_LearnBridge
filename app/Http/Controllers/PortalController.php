@@ -39,6 +39,7 @@ class PortalController extends Controller
     public function updateProfile(Request $request)
     {
         $data = $request->validate(['name'=>'required|string|max:120','headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
+        $data = $request->validate(['headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
         auth()->user()->update($data + ['profile_public'=>$request->boolean('profile_public'),'certificates_public'=>$request->boolean('certificates_public')]);
         return back()->with('success','Profil berhasil diperbarui.');
     }
