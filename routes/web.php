@@ -13,10 +13,12 @@ Route::middleware('guest')->group(function () {
 });
 Route::get('/sertifikat/verifikasi/{code}', [PortalController::class,'verifyCertificate'])->name('certificate.verify');
 Route::get('/profil/publik/{id}', [PortalController::class,'publicProfile']);
+Route::get('/institusi/publik/{id}', [PortalController::class,'publicInstitution']);
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class,'logout']);
     Route::get('/dashboard', [PortalController::class,'index']);
     Route::post('/profil', [PortalController::class,'updateProfile']);
+    Route::post('/profil/institusi', [PortalController::class,'updateInstitutionProfile']);
     Route::get('/modul/{module}', [PortalController::class,'show'])->whereAlpha('module');
     Route::post('/modul/{module}', [PortalController::class,'store'])->whereAlpha('module');
     Route::put('/modul/{module}/{id}', [PortalController::class,'update'])->whereAlpha('module');

@@ -38,9 +38,41 @@ class PortalController extends Controller
 
     public function updateProfile(Request $request)
     {
+        $data = $request->validate(['name'=>'required|string|max:120','headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
         $data = $request->validate(['headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
         auth()->user()->update($data + ['profile_public'=>$request->boolean('profile_public'),'certificates_public'=>$request->boolean('certificates_public')]);
         return back()->with('success','Profil berhasil diperbarui.');
+    }
+
+    public function updateInstitutionProfile(Request $request)
+    {
+        abort_unless(auth()->user()->isInstitution(),403);
+        $data=$request->validate(['name'=>'required|string|max:160','type'=>'nullable|string|max:100','description'=>'nullable|string|max:5000','website'=>'nullable|url|max:255','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
+        $data['profile_public']=$request->boolean('profile_public'); $data['certificates_public']=$request->boolean('certificates_public');
+        $institution=DB::table('institutions')->where('user_id',auth()->id())->first(); abort_unless($institution,404);
+        DB::table('institutions')->where('id',$institution->id)->update($data+['updated_at'=>now()]);
+        return back()->with('success','Profil institusi berhasil diperbarui.');
+    }
+
+    public function publicProfile(int $id)
+    {
+        $user=DB::table('users')->where('id',$id)->where('profile_public',true)->first(); abort_unless($user,404);
+        $skills=DB::table('skills')->where('user_id',$id)->orderBy('name')->get();
+        $certificates=$user->certificates_public ? DB::table('certificates')->where('user_id',$id)->whereNull('revoked_at')->orderByDesc('issued_at')->get() : collect();
+        return view('public-profile',compact('user','skills','certificates'));
+    }
+
+    public function publicInstitution(int $id)
+    {
+        $institution=DB::table('institutions')->where('id',$id)->where('profile_public',true)->where('verification_status','approved')->first(); abort_unless($institution,404);
+        $courses=DB::table('courses')->where('institution_id',$id)->where('status','published')->get();
+        $bootcamps=DB::table('bootcamps')->where('institution_id',$id)->where('status','published')->get();
+        $certificates=collect();
+        if ($institution->certificates_public) {
+            $courseIds=$courses->pluck('id'); $bootcampIds=$bootcamps->pluck('id');
+            $certificates=DB::table('certificates')->join('users','users.id','=','certificates.user_id')->where('users.certificates_public',true)->whereNull('certificates.revoked_at')->where(fn($q)=>$q->where(fn($a)=>$a->where('certificates.program_type','course')->whereIn('certificates.program_id',$courseIds))->orWhere(fn($a)=>$a->where('certificates.program_type','bootcamp')->whereIn('certificates.program_id',$bootcampIds)))->select('certificates.verification_code','certificates.program_type','certificates.program_id','certificates.issued_at')->get();
+        }
+        return view('public-institution',compact('institution','courses','bootcamps','certificates'));
     }
 
     public function show(string $module)
@@ -72,6 +104,7 @@ class PortalController extends Controller
             abort_unless(isset($data['options'][$data['correct_option']]),422,'Nomor jawaban benar harus sesuai jumlah pilihan.');
             if (auth()->user()->isInstitution()) $this->assertOwnedQuiz($data['quiz_id']);
         }
+        if ($module === 'keterampilan') abort_if(DB::table('skills')->where('user_id',auth()->id())->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])->exists(),422,'Keterampilan tersebut sudah ada di profil Anda.');
         if (in_array($module, ['kursus','bootcamp','materi','kuis','pengumuman']) && auth()->user()->isInstitution()) {
             $institution = auth()->user()->institution;
             abort_unless($institution && $institution->verification_status === 'approved', 403, 'Institusi harus diverifikasi admin.');
@@ -137,6 +170,7 @@ class PortalController extends Controller
         }
         $data=$request->validate($this->rules($module));
         if ($module==='soal') { $data['options']=array_values(array_filter(array_map('trim',explode('|',$data['options'])))); abort_unless(isset($data['options'][$data['correct_option']]),422,'Nomor jawaban benar harus sesuai jumlah pilihan.'); }
+        if ($module==='keterampilan') abort_if(DB::table('skills')->where('user_id',auth()->id())->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])->where('id','<>',$id)->exists(),422,'Keterampilan tersebut sudah ada di profil Anda.');
         if (in_array($module,['kursus','bootcamp']) && auth()->user()->isInstitution()) {
             $inst=auth()->user()->institution; abort_unless($inst && $inst->verification_status==='approved',403);
             $data['institution_id']=$inst->id; unset($data['status']);

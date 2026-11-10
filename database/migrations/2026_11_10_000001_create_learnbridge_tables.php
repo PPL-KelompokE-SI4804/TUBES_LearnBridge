@@ -19,6 +19,7 @@ return new class extends Migration {
             $table->id(); $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
             $table->string('name'); $table->string('type')->nullable(); $table->text('description')->nullable();
             $table->string('website')->nullable(); $table->string('verification_status')->default('pending')->index();
+            $table->boolean('profile_public')->default(false); $table->boolean('certificates_public')->default(false);
             $table->text('verification_note')->nullable(); $table->timestamps();
         });
         Schema::create('skills', function (Blueprint $table) {
