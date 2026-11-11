@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ForumComment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -125,6 +126,18 @@ class PortalController extends Controller
             }
             $data['issued_by'] = auth()->id(); $data['verification_code'] = Str::upper(Str::random(16)); $data['issued_at'] = now();
         }
+        if ($module === 'komentar') {
+            $latestDiscussionId = DB::table('discussions')->latest('id')->value('id');
+            $data['discussion_id'] = $request->input('discussion_id') 
+                                  ?? $request->input('discussion') 
+                                  ?? $request->input('thread_id');
+
+            $data['discussion_id'] = (!empty($inputId)) ? $inputId : $latestDiscussionId;
+            abort_unless($data['discussion_id'], 422, 'Belum ada topik diskusi yang tersedia untuk dikomentari. Buat diskusi terlebih dahulu.');
+            $data['body'] = $request->input('body') ?? $request->input('content');
+            unset($data['discussion'], $data['thread_id'], $data['content']);
+        }
+        
         if ($module === 'pengumuman') $data['published_at'] = now();
         DB::table($table)->insert($data + ['created_at'=>now(),'updated_at'=>now()]);
         return back()->with('success', $config['title'].' berhasil disimpan.');
@@ -229,11 +242,34 @@ class PortalController extends Controller
         return back()->with('success', "Kuis dikumpulkan. Nilai Anda: {$score}.");
     }
 
+    public function storeComment(Request $request)
+    {
+        $validated = $request->validate([
+        'discussion_id' => ['required', 'exists:forum_threads,id'],
+        'body' => ['required', 'string'],
+        ]);
+
+        $comment = ForumComment::create([
+        'discussion_id' => $validated['discussion_id'],
+        'body' => $validated['body'],
+        'user_id' => auth()->id(),
+        ]);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Komentar berhasil ditambahkan.',
+                'data' => $comment,
+                ], 201);
+        }
+
+        return redirect()->back()->with('success', 'Komentar berhasil ditambahkan.');
+    }
+
     private function config(string $key): array { abort_unless(isset($this->modules[$key]),404); return $this->modules[$key]; }
     private function authorizeModule(string $module): void { abort_unless(in_array(auth()->user()->role,$this->config($module)['roles'],true),403); }
     private function rules(string $module): array
     {
-        $rules = ['name'=>'required|string|max:150','email'=>'required|email','role'=>'required|in:pelajar,institusi,admin','type'=>'nullable|string|max:100','description'=>'nullable|string','website'=>'nullable|url|max:255','title'=>'required|string|max:180','body'=>'nullable|string','institution_id'=>'required|integer|exists:institutions,id','category_id'=>'nullable|integer|exists:categories,id','status'=>'nullable|in:draft,published,archived','passing_score'=>'nullable|integer|min:0|max:100','program_type'=>'required_with:program_id|in:course,bootcamp','program_id'=>'required_with:program_type|integer','position'=>'nullable|integer|min:0','material_id'=>'required|integer|exists:materials,id','percent'=>'nullable|integer|min:0|max:100','completed'=>'nullable|boolean','quiz_id'=>'required|integer|exists:quizzes,id','prompt'=>'required|string','options'=>'required|string','correct_option'=>'required|integer|min:0','points'=>'required|integer|min:1','user_id'=>'nullable|integer|exists:users,id','rating'=>'required|integer|min:1|max:5','audience'=>'nullable|in:all,pelajar,institusi','content_type'=>'required|string|max:100','content_id'=>'required|integer','category'=>'required|string|max:100'];
+        $rules = ['name'=>'required|string|max:150','email'=>'required|email','role'=>'required|in:pelajar,institusi,admin','type'=>'nullable|string|max:100','description'=>'nullable|string','website'=>'nullable|url|max:255','title'=>'required|string|max:180','body'=>'nullable|string','institution_id'=>'required|integer|exists:institutions,id','category_id'=>'nullable|integer|exists:categories,id','status'=>'nullable|in:draft,published,archived','passing_score'=>'nullable|integer|min:0|max:100','program_type'=>'required_with:program_id|in:course,bootcamp','program_id'=>'required_with:program_type|integer','position'=>'nullable|integer|min:0','material_id'=>'required|integer|exists:materials,id','percent'=>'nullable|integer|min:0|max:100','completed'=>'nullable|boolean','quiz_id'=>'required|integer|exists:quizzes,id','prompt'=>'required|string','options'=>'required|string','correct_option'=>'required|integer|min:0','points'=>'required|integer|min:1','user_id'=>'nullable|integer|exists:users,id','rating'=>'required|integer|min:1|max:5','audience'=>'nullable|in:all,pelajar,institusi','content_type'=>'required|string|max:100','content_id'=>'required|integer','category'=>'required|string|max:100', 'discussion_id'=>'nullable|integer|exists:discussions,id',];
         $selected = array_keys($this->config($module)['fields']); $out=[]; foreach ($selected as $key) if (isset($rules[$key])) $out[$key] = $rules[$key];
         if ($module === 'ulasan') $out['rating']='required|integer|min:1|max:5';
         if ($module === 'forum' || $module === 'komentar' || $module === 'catatan' || $module === 'materi' || $module === 'pengumuman' || $module === 'laporan') $out['body']='required|string';
