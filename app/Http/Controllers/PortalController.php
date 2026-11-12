@@ -200,8 +200,13 @@ class PortalController extends Controller
     public function verifyInstitution(Request $request, int $id)
     {
         abort_unless(auth()->user()->isAdmin(),403);
-        $data=$request->validate(['verification_status'=>'required|in:approved,rejected','verification_note'=>'nullable|string|max:2000']);
-        DB::table('institutions')->where('id',$id)->update($data+['updated_at'=>now()]);
+        $data=$request->validate(['verification_status'=>'required|in:approved,rejected','verification_note'=>'required_if:verification_status,rejected|nullable|string|max:2000']);
+        abort_unless(DB::table('institutions')->where('id',$id)->exists(),404);
+        $note=$data['verification_note'] ?? null;
+        DB::transaction(function () use ($id, $data, $note) {
+            DB::table('institutions')->where('id',$id)->update(['verification_status'=>$data['verification_status'],'verification_note'=>$note,'updated_at'=>now()]);
+            DB::table('institution_verifications')->insert(['institution_id'=>$id,'admin_id'=>auth()->id(),'status'=>$data['verification_status'],'notes'=>$note,'verified_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
+        });
         return back()->with('success','Status verifikasi institusi diperbarui.');
     }
 

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\InstitutionVerificationController;
 use App\Http\Controllers\PortalController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/institusi/{id}/verifikasi', [PortalController::class,'verifyInstitution']);
     Route::post('/admin/laporan/{id}/tindak-lanjut', [PortalController::class,'resolveReport']);
     Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/verifikasi-institusi', [InstitutionVerificationController::class, 'index']);
+        Route::get('/admin/verifikasi-institusi/{id}', [InstitutionVerificationController::class, 'show'])->whereNumber('id');
+        Route::post('/admin/verifikasi-institusi/{id}/setujui', [InstitutionVerificationController::class, 'approve'])->whereNumber('id');
+        Route::post('/admin/verifikasi-institusi/{id}/tolak', [InstitutionVerificationController::class, 'reject'])->whereNumber('id');
         Route::get('/admin/kategori', [CategoryController::class, 'index']);
         Route::get('/admin/kategori/tambah', [CategoryController::class, 'create']);
         Route::post('/admin/kategori', [CategoryController::class, 'store']);
