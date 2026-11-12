@@ -21,7 +21,7 @@ class DatabaseSeeder extends Seeder
         $institutionUser=User::where('email','institusi@learnbridge.test')->firstOrFail();
         DB::table('institutions')->updateOrInsert(['user_id'=>$institutionUser->id], ['name'=>'Akademi Digital Demo','type'=>'Lembaga pelatihan','description'=>'Institusi contoh untuk mencoba alur LearnBridge.','verification_status'=>'approved','created_at'=>now(),'updated_at'=>now()]);
         $institution=DB::table('institutions')->where('user_id',$institutionUser->id)->first();
-        DB::table('categories')->updateOrInsert(['name'=>'Pemrograman Web'],['description'=>'Dasar pengembangan aplikasi web.','created_at'=>now(),'updated_at'=>now()]);
+        DB::table('categories')->updateOrInsert(['name'=>'Pemrograman Web'],['slug'=>'pemrograman-web','status'=>'active','description'=>'Dasar pengembangan aplikasi web.','created_at'=>now(),'updated_at'=>now()]);
         $categoryId=DB::table('categories')->where('name','Pemrograman Web')->value('id');
         DB::table('courses')->updateOrInsert(['institution_id'=>$institution->id,'title'=>'Dasar Laravel'],['category_id'=>$categoryId,'description'=>'Contoh kursus untuk menguji proses pendaftaran dan belajar.','status'=>'published','passing_score'=>70,'created_at'=>now(),'updated_at'=>now()]);
         $courseId=DB::table('courses')->where('institution_id',$institution->id)->where('title','Dasar Laravel')->value('id');

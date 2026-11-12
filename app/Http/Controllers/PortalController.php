@@ -12,7 +12,6 @@ class PortalController extends Controller
         'institusi' => ['table'=>'institutions','roles'=>['admin','institusi'],'title'=>'Institusi','fields'=>['name'=>'Nama institusi','type'=>'Jenis','description'=>'Deskripsi','website'=>'Situs web','verification_status'=>'Status verifikasi']],
         'akun' => ['table'=>'users','roles'=>['admin'],'title'=>'Akun pengguna','fields'=>['name'=>'Nama','email'=>'Email','role'=>'Peran (pelajar/institusi/admin)']],
         'keterampilan' => ['table'=>'skills','roles'=>['pelajar'],'title'=>'Keterampilan','fields'=>['name'=>'Nama keterampilan']],
-        'kategori' => ['table'=>'categories','roles'=>['admin'],'title'=>'Kategori','fields'=>['name'=>'Nama kategori','description'=>'Deskripsi']],
         'kursus' => ['table'=>'courses','roles'=>['admin','institusi','pelajar'],'title'=>'Kursus','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
         'bootcamp' => ['table'=>'bootcamps','roles'=>['admin','institusi','pelajar'],'title'=>'Bootcamp','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
         'materi' => ['table'=>'materials','roles'=>['admin','institusi','pelajar'],'title'=>'Materi','fields'=>['program_type'=>'Jenis program (course/bootcamp)','program_id'=>'ID program','title'=>'Judul materi','body'=>'Isi materi','position'=>'Urutan']],
@@ -85,7 +84,8 @@ class PortalController extends Controller
         $canCreate = in_array(auth()->user()->role, $config['roles'], true) && !in_array(auth()->user()->role, ['pelajar'], true) && !in_array($module,['akun','institusi'],true);
         if (in_array($module, ['keterampilan','catatan','forum','komentar','ulasan','bookmark','progres','laporan'])) $canCreate = true;
         if (in_array($module, ['pendaftaran','sertifikat','pengumuman'])) $canCreate = auth()->user()->isAdmin() || in_array(auth()->user()->role, ['institusi'], true);
-        return view('module', compact('module','config','rows','canCreate','quizQuestions'));
+        $categories = in_array($module, ['kursus','bootcamp'], true) ? DB::table('categories')->when(!auth()->user()->isAdmin(), fn ($q) => $q->where('status','active'))->orderBy('name')->get() : collect();
+        return view('module', compact('module','config','rows','canCreate','quizQuestions','categories'));
     }
 
     public function store(Request $request, string $module)

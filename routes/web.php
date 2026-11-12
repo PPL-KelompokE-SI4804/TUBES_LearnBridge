@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\PortalController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,4 +28,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/kuis/{quiz}/kumpulkan', [PortalController::class,'submitQuiz']);
     Route::post('/admin/institusi/{id}/verifikasi', [PortalController::class,'verifyInstitution']);
     Route::post('/admin/laporan/{id}/tindak-lanjut', [PortalController::class,'resolveReport']);
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/kategori', [CategoryController::class, 'index']);
+        Route::get('/admin/kategori/tambah', [CategoryController::class, 'create']);
+        Route::post('/admin/kategori', [CategoryController::class, 'store']);
+        Route::get('/admin/kategori/{id}/ubah', [CategoryController::class, 'edit'])->whereNumber('id');
+        Route::put('/admin/kategori/{id}', [CategoryController::class, 'update'])->whereNumber('id');
+        Route::delete('/admin/kategori/{id}', [CategoryController::class, 'destroy'])->whereNumber('id');
+    });
 });
