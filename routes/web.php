@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\InstitutionController;
+use App\Http\Controllers\InstitutionVerificationController;
 use App\Http\Controllers\PortalController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +28,24 @@ Route::middleware('auth')->group(function () {
     Route::delete('/modul/{module}/{id}', [PortalController::class,'destroy'])->whereAlpha('module');
     Route::post('/pendaftaran', [PortalController::class,'enroll']);
     Route::post('/kuis/{quiz}/kumpulkan', [PortalController::class,'submitQuiz']);
-    Route::post('/admin/institusi/{id}/verifikasi', [PortalController::class,'verifyInstitution']);
     Route::post('/admin/laporan/{id}/tindak-lanjut', [PortalController::class,'resolveReport']);
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/verifikasi-institusi', [InstitutionVerificationController::class, 'index']);
+        Route::get('/admin/verifikasi-institusi/{id}', [InstitutionVerificationController::class, 'show'])->whereNumber('id');
+        Route::post('/admin/verifikasi-institusi/{id}/setujui', [InstitutionVerificationController::class, 'approve'])->whereNumber('id');
+        Route::post('/admin/verifikasi-institusi/{id}/tolak', [InstitutionVerificationController::class, 'reject'])->whereNumber('id');
+        Route::get('/admin/institusi', [InstitutionController::class, 'index']);
+        Route::get('/admin/institusi/tambah', [InstitutionController::class, 'create']);
+        Route::post('/admin/institusi', [InstitutionController::class, 'store']);
+        Route::get('/admin/institusi/{id}', [InstitutionController::class, 'show'])->whereNumber('id');
+        Route::get('/admin/institusi/{id}/ubah', [InstitutionController::class, 'edit'])->whereNumber('id');
+        Route::put('/admin/institusi/{id}/ubah', [InstitutionController::class, 'update'])->whereNumber('id');
+        Route::delete('/admin/institusi/{id}', [InstitutionController::class, 'destroy'])->whereNumber('id');
+        Route::get('/admin/kategori', [CategoryController::class, 'index']);
+        Route::get('/admin/kategori/tambah', [CategoryController::class, 'create']);
+        Route::post('/admin/kategori', [CategoryController::class, 'store']);
+        Route::get('/admin/kategori/{id}/ubah', [CategoryController::class, 'edit'])->whereNumber('id');
+        Route::put('/admin/kategori/{id}', [CategoryController::class, 'update'])->whereNumber('id');
+        Route::delete('/admin/kategori/{id}', [CategoryController::class, 'destroy'])->whereNumber('id');
+    });
 });
