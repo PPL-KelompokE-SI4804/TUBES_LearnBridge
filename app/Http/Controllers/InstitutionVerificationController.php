@@ -7,14 +7,19 @@ use Illuminate\Support\Facades\DB;
 
 class InstitutionVerificationController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $status = $request->query('status', 'pending');
+        if (! in_array($status, ['pending', 'approved', 'rejected'], true)) {
+            $status = 'pending';
+        }
+
         $institutions = DB::table('institutions')
-            ->where('verification_status', 'pending')
+            ->where('verification_status', $status)
             ->orderBy('id')
             ->get();
 
-        return view('verifications.index', compact('institutions'));
+        return view('verifications.index', compact('institutions', 'status'));
     }
 
     public function show(int $id)
@@ -62,9 +67,11 @@ class InstitutionVerificationController extends Controller
 
     private function record(int $id, string $status, ?string $notes): void
     {
-        abort_unless(DB::table('institutions')->where('id', $id)->exists(), 404);
-
         DB::transaction(function () use ($id, $status, $notes) {
+            $institution = DB::table('institutions')->where('id', $id)->lockForUpdate()->first();
+            abort_unless($institution, 404);
+            abort_if($status === 'approved' && $institution->verification_status === 'approved', 422, 'Institusi sudah disetujui.');
+
             DB::table('institutions')->where('id', $id)->update([
                 'verification_status' => $status,
                 'verification_note' => $notes,

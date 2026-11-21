@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 class PortalController extends Controller
 {
     private array $modules = [
-        'institusi' => ['table'=>'institutions','roles'=>['admin','institusi'],'title'=>'Institusi','fields'=>['name'=>'Nama institusi','type'=>'Jenis','description'=>'Deskripsi','website'=>'Situs web','verification_status'=>'Status verifikasi']],
+        'institusi' => ['table'=>'institutions','roles'=>['institusi'],'title'=>'Institusi','fields'=>['name'=>'Nama institusi','type'=>'Jenis','description'=>'Deskripsi','website'=>'Situs web','verification_status'=>'Status verifikasi']],
         'akun' => ['table'=>'users','roles'=>['admin'],'title'=>'Akun pengguna','fields'=>['name'=>'Nama','email'=>'Email','role'=>'Peran (pelajar/institusi/admin)']],
         'keterampilan' => ['table'=>'skills','roles'=>['pelajar'],'title'=>'Keterampilan','fields'=>['name'=>'Nama keterampilan']],
         'kursus' => ['table'=>'courses','roles'=>['admin','institusi','pelajar'],'title'=>'Kursus','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
@@ -48,8 +48,17 @@ class PortalController extends Controller
         abort_unless(auth()->user()->isInstitution(),403);
         $data=$request->validate(['name'=>'required|string|max:160','type'=>'nullable|string|max:100','description'=>'nullable|string|max:5000','website'=>'nullable|url|max:255','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
         $data['profile_public']=$request->boolean('profile_public'); $data['certificates_public']=$request->boolean('certificates_public');
-        $institution=DB::table('institutions')->where('user_id',auth()->id())->first(); abort_unless($institution,404);
-        DB::table('institutions')->where('id',$institution->id)->update($data+['updated_at'=>now()]);
+        $institution=DB::table('institutions')->where('user_id',auth()->id())->first();
+        if ($institution) {
+            DB::table('institutions')->where('id',$institution->id)->update($data+['updated_at'=>now()]);
+        } else {
+            DB::table('institutions')->insert($data+[
+                'user_id'=>auth()->id(),
+                'verification_status'=>'pending',
+                'created_at'=>now(),
+                'updated_at'=>now(),
+            ]);
+        }
         return back()->with('success','Profil institusi berhasil diperbarui.');
     }
 
@@ -63,7 +72,7 @@ class PortalController extends Controller
 
     public function publicInstitution(int $id)
     {
-        $institution=DB::table('institutions')->where('id',$id)->where('profile_public',true)->where('verification_status','approved')->first(); abort_unless($institution,404);
+        $institution=DB::table('institutions')->where('id',$id)->where('profile_public',true)->where('verification_status','approved')->where('is_active',true)->first(); abort_unless($institution,404);
         $courses=DB::table('courses')->where('institution_id',$id)->where('status','published')->get();
         $bootcamps=DB::table('bootcamps')->where('institution_id',$id)->where('status','published')->get();
         $certificates=collect();
@@ -84,7 +93,15 @@ class PortalController extends Controller
         $canCreate = in_array(auth()->user()->role, $config['roles'], true) && !in_array(auth()->user()->role, ['pelajar'], true) && !in_array($module,['akun','institusi'],true);
         if (in_array($module, ['keterampilan','catatan','forum','komentar','ulasan','bookmark','progres','laporan'])) $canCreate = true;
         if (in_array($module, ['pendaftaran','sertifikat','pengumuman'])) $canCreate = auth()->user()->isAdmin() || in_array(auth()->user()->role, ['institusi'], true);
-        $categories = in_array($module, ['kursus','bootcamp'], true) ? DB::table('categories')->when(!auth()->user()->isAdmin(), fn ($q) => $q->where('status','active'))->orderBy('name')->get() : collect();
+        $categories = collect();
+        if (in_array($module, ['kursus','bootcamp'], true)) {
+            $usedCategoryIds = $rows->pluck('category_id')->filter()->unique();
+            $categories = DB::table('categories')
+                ->when(!auth()->user()->isAdmin(), fn ($q) => $q->where(function ($query) use ($usedCategoryIds) {
+                    $query->where('status', 'active')->orWhereIn('id', $usedCategoryIds);
+                }))
+                ->orderBy('name')->get();
+        }
         return view('module', compact('module','config','rows','canCreate','quizQuestions','categories'));
     }
 
@@ -94,7 +111,10 @@ class PortalController extends Controller
         abort_if($module === 'akun',405);
         abort_unless(in_array(auth()->user()->role, $config['roles'], true), 403);
         if ($module === 'sertifikat') abort_unless(auth()->user()->isAdmin(),403,'Hanya admin yang dapat menerbitkan sertifikat.');
-        $data = $request->validate($this->rules($module));
+        $rules = $this->rules($module);
+        if (auth()->user()->isInstitution() && in_array($module, ['kursus', 'bootcamp'], true)) unset($rules['institution_id']);
+        $data = $request->validate($rules);
+        if (in_array($module, ['kursus', 'bootcamp'])) $this->assertCategoryAvailable($data['category_id'] ?? null);
         if ($module === 'akun') {
             $data['email']=strtolower($data['email']);
             abort_if(DB::table('users')->where('email',$data['email'])->exists(),422,'Email sudah digunakan.');
@@ -168,7 +188,15 @@ class PortalController extends Controller
             if ($module==='kuis') $this->assertOwnedProgram(['material_id'=>$row->material_id],$module);
             if ($module==='soal') $this->assertOwnedQuiz($row->quiz_id);
         }
-        $data=$request->validate($this->rules($module));
+        $rules=$this->rules($module);
+        if (auth()->user()->isInstitution() && in_array($module, ['kursus', 'bootcamp'], true)) unset($rules['institution_id']);
+        $data=$request->validate($rules);
+        if (in_array($module, ['kursus', 'bootcamp'])) {
+            $currentCategoryId = $row->category_id ?? null;
+            $data['category_id'] = $request->input('category_id', $currentCategoryId);
+            if ($data['category_id'] === null || $data['category_id'] === '') $data['category_id'] = $currentCategoryId;
+            $this->assertCategoryAvailable($data['category_id'], $currentCategoryId);
+        }
         if ($module==='soal') { $data['options']=array_values(array_filter(array_map('trim',explode('|',$data['options'])))); abort_unless(isset($data['options'][$data['correct_option']]),422,'Nomor jawaban benar harus sesuai jumlah pilihan.'); }
         if ($module==='keterampilan') abort_if(DB::table('skills')->where('user_id',auth()->id())->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])->where('id','<>',$id)->exists(),422,'Keterampilan tersebut sudah ada di profil Anda.');
         if (in_array($module,['kursus','bootcamp']) && auth()->user()->isInstitution()) {
@@ -185,7 +213,9 @@ class PortalController extends Controller
         abort_unless(auth()->user()->role === 'pelajar',403);
         $data = $request->validate(['program_type'=>'required|in:course,bootcamp','program_id'=>'required|integer']);
         $table = $data['program_type'] === 'course' ? 'courses' : 'bootcamps';
-        $program = DB::table($table)->where('id',$data['program_id'])->where('status','published')->first();
+        $program = DB::table($table)->where('id',$data['program_id'])->where('status','published')
+            ->whereIn('institution_id', DB::table('institutions')->where('is_active', true)->select('id'))
+            ->first();
         abort_unless($program, 404);
         DB::table('enrollments')->updateOrInsert(['user_id'=>auth()->id(),'program_type'=>$data['program_type'],'program_id'=>$program->id], ['status'=>'active','enrolled_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
         return back()->with('success','Pendaftaran berhasil.');
@@ -197,17 +227,13 @@ class PortalController extends Controller
         return view('certificate', compact('certificate'));
     }
 
-    public function verifyInstitution(Request $request, int $id)
+    private function assertCategoryAvailable($categoryId, $currentCategoryId = null): void
     {
-        abort_unless(auth()->user()->isAdmin(),403);
-        $data=$request->validate(['verification_status'=>'required|in:approved,rejected','verification_note'=>'required_if:verification_status,rejected|nullable|string|max:2000']);
-        abort_unless(DB::table('institutions')->where('id',$id)->exists(),404);
-        $note=$data['verification_note'] ?? null;
-        DB::transaction(function () use ($id, $data, $note) {
-            DB::table('institutions')->where('id',$id)->update(['verification_status'=>$data['verification_status'],'verification_note'=>$note,'updated_at'=>now()]);
-            DB::table('institution_verifications')->insert(['institution_id'=>$id,'admin_id'=>auth()->id(),'status'=>$data['verification_status'],'notes'=>$note,'verified_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
-        });
-        return back()->with('success','Status verifikasi institusi diperbarui.');
+        if (auth()->user()->isAdmin() || $categoryId === null || $categoryId === '' || (string) $categoryId === (string) $currentCategoryId) {
+            return;
+        }
+
+        abort_unless(DB::table('categories')->where('id', $categoryId)->where('status', 'active')->exists(), 422, 'Kategori harus aktif.');
     }
 
     public function resolveReport(Request $request, int $id)
@@ -271,7 +297,10 @@ class PortalController extends Controller
         if ($config['table'] === 'certificates' && !$user->isAdmin()) $query->where('user_id',$user->id);
         if ($config['table'] === 'institutions' && !$user->isAdmin()) $query->where('user_id',$user->id);
         if (in_array($config['table'], ['courses','bootcamps']) && $user->isInstitution()) $query->where('institution_id',optional($user->institution)->id ?? 0);
-        if (in_array($config['table'], ['courses','bootcamps']) && !$user->isAdmin() && !$user->isInstitution()) $query->where('status','published');
+        if (in_array($config['table'], ['courses','bootcamps']) && !$user->isAdmin() && !$user->isInstitution()) {
+            $query->where('status','published')
+                ->whereIn('institution_id', DB::table('institutions')->where('is_active', true)->select('id'));
+        }
         if (in_array($config['table'],['materials','quizzes','questions']) && !$user->isAdmin()) {
             $materialIds=[];
             if ($user->isInstitution()) {
