@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class PortalController extends Controller
@@ -15,7 +16,7 @@ class PortalController extends Controller
         'kategori' => ['table'=>'categories','roles'=>['admin'],'title'=>'Kategori','fields'=>['name'=>'Nama kategori','description'=>'Deskripsi']],
         'kursus' => ['table'=>'courses','roles'=>['admin','institusi','pelajar'],'title'=>'Kursus','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
         'bootcamp' => ['table'=>'bootcamps','roles'=>['admin','institusi','pelajar'],'title'=>'Bootcamp','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
-        'materi' => ['table'=>'materials','roles'=>['admin','institusi','pelajar'],'title'=>'Materi','fields'=>['program_type'=>'Jenis program (course/bootcamp)','program_id'=>'ID program','title'=>'Judul materi','body'=>'Isi materi','position'=>'Urutan']],
+        'materi' => ['table'=>'materials','roles'=>['admin','institusi','pelajar'],'title'=>'Materi','fields'=>['program_type'=>'Jenis program','program_id'=>'ID program','title'=>'Judul materi','body'=>'Deskripsi materi','source_url'=>'Tautan materi','attachment'=>'Berkas materi','position'=>'Urutan']],
         'pendaftaran' => ['table'=>'enrollments','roles'=>['admin','institusi','pelajar'],'title'=>'Pendaftaran','fields'=>['program_type'=>'Jenis program','program_id'=>'ID program','status'=>'Status']],
         'progres' => ['table'=>'material_progress','roles'=>['pelajar','admin'],'title'=>'Progres belajar','fields'=>['material_id'=>'ID materi','percent'=>'Persentase (0-100)','completed'=>'Selesai (0/1)']],
         'catatan' => ['table'=>'material_notes','roles'=>['pelajar'],'title'=>'Catatan belajar','fields'=>['material_id'=>'ID materi','body'=>'Catatan']],
@@ -82,10 +83,13 @@ class PortalController extends Controller
         if ($module === 'pendaftaran') abort_unless(auth()->user()->isAdmin(),403);
         $rows = $this->queryFor($config)->latest('id')->limit(100)->get();
         $quizQuestions = $module === 'kuis' ? DB::table('questions')->orderBy('id')->get()->groupBy('quiz_id') : collect();
+        $categories = in_array($module, ['kursus', 'bootcamp'], true)
+            ? DB::table('categories')->orderBy('name')->get()
+            : collect();
         $canCreate = in_array(auth()->user()->role, $config['roles'], true) && !in_array(auth()->user()->role, ['pelajar'], true) && !in_array($module,['akun','institusi'],true);
         if (in_array($module, ['keterampilan','catatan','forum','komentar','ulasan','bookmark','progres','laporan'])) $canCreate = true;
         if (in_array($module, ['pendaftaran','sertifikat','pengumuman'])) $canCreate = auth()->user()->isAdmin() || in_array(auth()->user()->role, ['institusi'], true);
-        return view('module', compact('module','config','rows','canCreate','quizQuestions'));
+        return view('module', compact('module','config','rows','canCreate','quizQuestions','categories'));
     }
 
     public function store(Request $request, string $module)
@@ -112,6 +116,7 @@ class PortalController extends Controller
             if ($module === 'materi' || $module === 'kuis') $this->assertOwnedProgram($data, $module);
             if ($module === 'pengumuman') $data['audience'] = 'all';
         }
+        if ($module === 'materi') $this->storeMaterialAttachment($request, $data);
         $table = $config['table'];
         if (in_array($table, ['skills','material_notes','discussions','comments','reviews','bookmarks','material_progress','reports','enrollments'])) $data['user_id'] = auth()->id();
         if ($module === 'institusi' && !auth()->user()->isAdmin()) { $data['user_id'] = auth()->id(); $data['verification_status'] = 'pending'; }
@@ -144,7 +149,10 @@ class PortalController extends Controller
         }
         if ($module==='pendaftaran' && auth()->user()->role==='pelajar') { DB::table('enrollments')->where('id',$id)->update(['status'=>'cancelled','updated_at'=>now()]); return back()->with('success','Pendaftaran dibatalkan.'); }
         if ($module === 'sertifikat' && auth()->user()->isAdmin()) DB::table('certificates')->where('id',$id)->update(['revoked_at'=>now(),'revocation_reason'=>'Dibatalkan admin','updated_at'=>now()]);
-        else DB::table($config['table'])->where('id',$id)->delete();
+        else {
+            if ($module === 'materi') $this->deleteMaterialAttachment($row);
+            DB::table($config['table'])->where('id',$id)->delete();
+        }
         return back()->with('success', 'Data berhasil diproses.');
     }
 
@@ -176,6 +184,7 @@ class PortalController extends Controller
             $data['institution_id']=$inst->id; unset($data['status']);
         }
         if (in_array($module,['materi','kuis']) && auth()->user()->isInstitution()) $this->assertOwnedProgram($data,$module);
+        if ($module === 'materi') $this->storeMaterialAttachment($request, $data, $row);
         DB::table($config['table'])->where('id',$id)->update($data+['updated_at'=>now()]);
         return back()->with('success','Perubahan berhasil disimpan.');
     }
@@ -229,12 +238,24 @@ class PortalController extends Controller
         return back()->with('success', "Kuis dikumpulkan. Nilai Anda: {$score}.");
     }
 
+    public function downloadMaterial(int $id)
+    {
+        $config = $this->config('materi');
+        $material = $this->queryFor($config)->where('id', $id)->firstOrFail();
+        abort_unless($material->file_path, 404, 'Berkas materi tidak tersedia.');
+        abort_unless(Storage::disk('local')->exists($material->file_path), 404, 'Berkas materi tidak ditemukan.');
+        return Storage::disk('local')->download($material->file_path, $material->file_name ?: 'materi');
+    }
+
     private function config(string $key): array { abort_unless(isset($this->modules[$key]),404); return $this->modules[$key]; }
     private function authorizeModule(string $module): void { abort_unless(in_array(auth()->user()->role,$this->config($module)['roles'],true),403); }
     private function rules(string $module): array
     {
-        $rules = ['name'=>'required|string|max:150','email'=>'required|email','role'=>'required|in:pelajar,institusi,admin','type'=>'nullable|string|max:100','description'=>'nullable|string','website'=>'nullable|url|max:255','title'=>'required|string|max:180','body'=>'nullable|string','institution_id'=>'required|integer|exists:institutions,id','category_id'=>'nullable|integer|exists:categories,id','status'=>'nullable|in:draft,published,archived','passing_score'=>'nullable|integer|min:0|max:100','program_type'=>'required_with:program_id|in:course,bootcamp','program_id'=>'required_with:program_type|integer','position'=>'nullable|integer|min:0','material_id'=>'required|integer|exists:materials,id','percent'=>'nullable|integer|min:0|max:100','completed'=>'nullable|boolean','quiz_id'=>'required|integer|exists:quizzes,id','prompt'=>'required|string','options'=>'required|string','correct_option'=>'required|integer|min:0','points'=>'required|integer|min:1','user_id'=>'nullable|integer|exists:users,id','rating'=>'required|integer|min:1|max:5','audience'=>'nullable|in:all,pelajar,institusi','content_type'=>'required|string|max:100','content_id'=>'required|integer','category'=>'required|string|max:100'];
+        $rules = ['name'=>'required|string|max:150','email'=>'required|email','role'=>'required|in:pelajar,institusi,admin','type'=>'nullable|string|max:100','description'=>'nullable|string','website'=>'nullable|url|max:255','title'=>'required|string|max:180','body'=>'nullable|string','institution_id'=>'required|integer|exists:institutions,id','category_id'=>'nullable|integer|exists:categories,id','status'=>'nullable|in:draft,published,archived','passing_score'=>'nullable|integer|min:0|max:100','program_type'=>'required_with:program_id|in:course,bootcamp','program_id'=>'required_with:program_type|integer','position'=>'nullable|integer|min:0','source_url'=>'nullable|url|max:2048','attachment'=>'nullable|file|mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,zip,mp4|max:10240','material_id'=>'required|integer|exists:materials,id','percent'=>'nullable|integer|min:0|max:100','completed'=>'nullable|boolean','quiz_id'=>'required|integer|exists:quizzes,id','prompt'=>'required|string','options'=>'required|string','correct_option'=>'required|integer|min:0','points'=>'required|integer|min:1','user_id'=>'nullable|integer|exists:users,id','rating'=>'required|integer|min:1|max:5','audience'=>'nullable|in:all,pelajar,institusi','content_type'=>'required|string|max:100','content_id'=>'required|integer','category'=>'required|string|max:100'];
         $selected = array_keys($this->config($module)['fields']); $out=[]; foreach ($selected as $key) if (isset($rules[$key])) $out[$key] = $rules[$key];
+        // Institusi tidak memilih ID institusinya sendiri. Nilai tersebut diisi
+        // otomatis dari akun yang sedang masuk setelah validasi formulir.
+        if (auth()->check() && auth()->user()->isInstitution() && in_array($module, ['kursus', 'bootcamp'], true)) unset($out['institution_id']);
         if ($module === 'ulasan') $out['rating']='required|integer|min:1|max:5';
         if ($module === 'forum' || $module === 'komentar' || $module === 'catatan' || $module === 'materi' || $module === 'pengumuman' || $module === 'laporan') $out['body']='required|string';
         return $out;
@@ -252,6 +273,19 @@ class PortalController extends Controller
     {
         $quiz=DB::table('quizzes')->find($quizId); abort_unless($quiz,404);
         $this->assertOwnedProgram(['material_id'=>$quiz->material_id],'kuis');
+    }
+    private function storeMaterialAttachment(Request $request, array &$data, ?object $oldMaterial = null): void
+    {
+        unset($data['attachment']);
+        if (!$request->hasFile('attachment')) return;
+        $file = $request->file('attachment');
+        $data['file_path'] = $file->store('materials', 'local');
+        $data['file_name'] = $file->getClientOriginalName();
+        if ($oldMaterial) $this->deleteMaterialAttachment($oldMaterial);
+    }
+    private function deleteMaterialAttachment(object $material): void
+    {
+        if (!empty($material->file_path)) Storage::disk('local')->delete($material->file_path);
     }
     private function queryFor(array $config)
     {

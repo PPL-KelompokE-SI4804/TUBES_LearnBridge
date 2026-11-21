@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BootcampApiController;
 use App\Http\Controllers\CourseApiController;
+use App\Http\Controllers\MaterialApiController;
 use App\Http\Controllers\PortalController;
 use Illuminate\Support\Facades\Route;
 
@@ -37,6 +39,40 @@ Route::prefix('api/v1')->group(function () {
         Route::get('/{id}', [CourseApiController::class, 'adminShow'])->whereNumber('id');
         Route::patch('/{id}/status', [CourseApiController::class, 'updateStatus'])->whereNumber('id');
     });
+
+    Route::get('/bootcamps', [BootcampApiController::class, 'catalog']);
+    Route::get('/bootcamps/{id}', [BootcampApiController::class, 'publicShow'])->whereNumber('id');
+
+    Route::middleware(['auth', 'role:institusi'])->prefix('institution/bootcamps')->group(function () {
+        Route::post('/', [BootcampApiController::class, 'store']);
+        Route::get('/', [BootcampApiController::class, 'index']);
+        Route::get('/{id}', [BootcampApiController::class, 'show'])->whereNumber('id');
+        Route::patch('/{id}', [BootcampApiController::class, 'update'])->whereNumber('id');
+        Route::post('/{id}/publish', [BootcampApiController::class, 'publish'])->whereNumber('id');
+        Route::post('/{id}/archive', [BootcampApiController::class, 'archive'])->whereNumber('id');
+        Route::delete('/{id}', [BootcampApiController::class, 'destroy'])->whereNumber('id');
+    });
+
+    Route::middleware(['auth', 'role:admin'])->prefix('admin/bootcamps')->group(function () {
+        Route::get('/', [BootcampApiController::class, 'adminIndex']);
+        Route::get('/{id}', [BootcampApiController::class, 'adminShow'])->whereNumber('id');
+        Route::patch('/{id}/status', [BootcampApiController::class, 'updateStatus'])->whereNumber('id');
+    });
+
+    // PBI 9 - API pengelolaan materi pembelajaran.
+    Route::middleware(['auth', 'role:institusi'])->prefix('institution/materials')->group(function () {
+        Route::post('/', [MaterialApiController::class, 'store']);
+        Route::get('/', [MaterialApiController::class, 'index']);
+        Route::get('/{id}', [MaterialApiController::class, 'show'])->whereNumber('id');
+        Route::patch('/{id}', [MaterialApiController::class, 'update'])->whereNumber('id');
+        Route::delete('/{id}', [MaterialApiController::class, 'destroy'])->whereNumber('id');
+    });
+
+    Route::middleware(['auth', 'role:admin'])->prefix('admin/materials')->group(function () {
+        Route::get('/', [MaterialApiController::class, 'adminIndex']);
+        Route::get('/{id}', [MaterialApiController::class, 'adminShow'])->whereNumber('id');
+        Route::delete('/{id}', [MaterialApiController::class, 'adminDestroy'])->whereNumber('id');
+    });
 });
 
 Route::middleware('auth')->group(function () {
@@ -44,6 +80,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [PortalController::class,'index']);
     Route::post('/profil', [PortalController::class,'updateProfile']);
     Route::post('/profil/institusi', [PortalController::class,'updateInstitutionProfile']);
+    Route::get('/materi/{id}/berkas', [PortalController::class,'downloadMaterial'])->name('material.file')->whereNumber('id');
     Route::get('/modul/{module}', [PortalController::class,'show'])->whereAlpha('module');
     Route::post('/modul/{module}', [PortalController::class,'store'])->whereAlpha('module');
     Route::put('/modul/{module}/{id}', [PortalController::class,'update'])->whereAlpha('module');
