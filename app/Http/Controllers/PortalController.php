@@ -37,8 +37,16 @@ class PortalController extends Controller
 
     public function updateProfile(Request $request)
     {
+<<<<<<< Updated upstream
         $data = $request->validate(['name'=>'required|string|max:120','headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
         $data = $request->validate(['headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
+=======
+        $data = $request->validate(
+            ['name'=>'sometimes|nullable|string|max:120','headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean'],
+            ['name.string'=>'Nama tampilan harus berupa teks.','name.max'=>'Nama tampilan maksimal 120 karakter.']
+        );
+        if (blank($data['name'] ?? null)) unset($data['name']);
+>>>>>>> Stashed changes
         auth()->user()->update($data + ['profile_public'=>$request->boolean('profile_public'),'certificates_public'=>$request->boolean('certificates_public')]);
         return back()->with('success','Profil berhasil diperbarui.');
     }
