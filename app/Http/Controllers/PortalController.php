@@ -4,18 +4,18 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class PortalController extends Controller
 {
     private array $modules = [
-        'institusi' => ['table'=>'institutions','roles'=>['admin','institusi'],'title'=>'Institusi','fields'=>['name'=>'Nama institusi','type'=>'Jenis','description'=>'Deskripsi','website'=>'Situs web','verification_status'=>'Status verifikasi']],
+        'institusi' => ['table'=>'institutions','roles'=>['institusi'],'title'=>'Institusi','fields'=>['name'=>'Nama institusi','type'=>'Jenis','description'=>'Deskripsi','website'=>'Situs web','verification_status'=>'Status verifikasi']],
         'akun' => ['table'=>'users','roles'=>['admin'],'title'=>'Akun pengguna','fields'=>['name'=>'Nama','email'=>'Email','role'=>'Peran (pelajar/institusi/admin)']],
         'keterampilan' => ['table'=>'skills','roles'=>['pelajar'],'title'=>'Keterampilan','fields'=>['name'=>'Nama keterampilan']],
-        'kategori' => ['table'=>'categories','roles'=>['admin'],'title'=>'Kategori','fields'=>['name'=>'Nama kategori','description'=>'Deskripsi']],
         'kursus' => ['table'=>'courses','roles'=>['admin','institusi','pelajar'],'title'=>'Kursus','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
         'bootcamp' => ['table'=>'bootcamps','roles'=>['admin','institusi','pelajar'],'title'=>'Bootcamp','fields'=>['institution_id'=>'ID institusi (admin)','title'=>'Judul','category_id'=>'ID kategori','description'=>'Deskripsi','status'=>'Status (draft/published)','passing_score'=>'Nilai lulus']],
-        'materi' => ['table'=>'materials','roles'=>['admin','institusi','pelajar'],'title'=>'Materi','fields'=>['program_type'=>'Jenis program (course/bootcamp)','program_id'=>'ID program','title'=>'Judul materi','body'=>'Isi materi','position'=>'Urutan']],
+        'materi' => ['table'=>'materials','roles'=>['admin','institusi','pelajar'],'title'=>'Materi','fields'=>['program_type'=>'Jenis program','program_id'=>'ID program','title'=>'Judul materi','body'=>'Deskripsi materi','source_url'=>'Tautan materi','attachment'=>'Berkas materi','position'=>'Urutan']],
         'pendaftaran' => ['table'=>'enrollments','roles'=>['admin','institusi','pelajar'],'title'=>'Pendaftaran','fields'=>['program_type'=>'Jenis program','program_id'=>'ID program','status'=>'Status']],
         'progres' => ['table'=>'material_progress','roles'=>['pelajar','admin'],'title'=>'Progres belajar','fields'=>['material_id'=>'ID materi','percent'=>'Persentase (0-100)','completed'=>'Selesai (0/1)']],
         'catatan' => ['table'=>'material_notes','roles'=>['pelajar'],'title'=>'Catatan belajar','fields'=>['material_id'=>'ID materi','body'=>'Catatan']],
@@ -38,16 +38,11 @@ class PortalController extends Controller
 
     public function updateProfile(Request $request)
     {
-<<<<<<< Updated upstream
-        $data = $request->validate(['name'=>'required|string|max:120','headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
-        $data = $request->validate(['headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
-=======
         $data = $request->validate(
             ['name'=>'sometimes|nullable|string|max:120','headline'=>'nullable|string|max:180','bio'=>'nullable|string|max:5000','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean'],
             ['name.string'=>'Nama tampilan harus berupa teks.','name.max'=>'Nama tampilan maksimal 120 karakter.']
         );
         if (blank($data['name'] ?? null)) unset($data['name']);
->>>>>>> Stashed changes
         auth()->user()->update($data + ['profile_public'=>$request->boolean('profile_public'),'certificates_public'=>$request->boolean('certificates_public')]);
         return back()->with('success','Profil berhasil diperbarui.');
     }
@@ -57,8 +52,17 @@ class PortalController extends Controller
         abort_unless(auth()->user()->isInstitution(),403);
         $data=$request->validate(['name'=>'required|string|max:160','type'=>'nullable|string|max:100','description'=>'nullable|string|max:5000','website'=>'nullable|url|max:255','profile_public'=>'nullable|boolean','certificates_public'=>'nullable|boolean']);
         $data['profile_public']=$request->boolean('profile_public'); $data['certificates_public']=$request->boolean('certificates_public');
-        $institution=DB::table('institutions')->where('user_id',auth()->id())->first(); abort_unless($institution,404);
-        DB::table('institutions')->where('id',$institution->id)->update($data+['updated_at'=>now()]);
+        $institution=DB::table('institutions')->where('user_id',auth()->id())->first();
+        if ($institution) {
+            DB::table('institutions')->where('id',$institution->id)->update($data+['updated_at'=>now()]);
+        } else {
+            DB::table('institutions')->insert($data+[
+                'user_id'=>auth()->id(),
+                'verification_status'=>'pending',
+                'created_at'=>now(),
+                'updated_at'=>now(),
+            ]);
+        }
         return back()->with('success','Profil institusi berhasil diperbarui.');
     }
 
@@ -72,7 +76,7 @@ class PortalController extends Controller
 
     public function publicInstitution(int $id)
     {
-        $institution=DB::table('institutions')->where('id',$id)->where('profile_public',true)->where('verification_status','approved')->first(); abort_unless($institution,404);
+        $institution=DB::table('institutions')->where('id',$id)->where('profile_public',true)->where('verification_status','approved')->where('is_active',true)->first(); abort_unless($institution,404);
         $courses=DB::table('courses')->where('institution_id',$id)->where('status','published')->get();
         $bootcamps=DB::table('bootcamps')->where('institution_id',$id)->where('status','published')->get();
         $certificates=collect();
@@ -93,7 +97,16 @@ class PortalController extends Controller
         $canCreate = in_array(auth()->user()->role, $config['roles'], true) && !in_array(auth()->user()->role, ['pelajar'], true) && !in_array($module,['akun','institusi'],true);
         if (in_array($module, ['keterampilan','catatan','forum','komentar','ulasan','bookmark','progres','laporan'])) $canCreate = true;
         if (in_array($module, ['pendaftaran','sertifikat','pengumuman'])) $canCreate = auth()->user()->isAdmin() || in_array(auth()->user()->role, ['institusi'], true);
-        return view('module', compact('module','config','rows','canCreate','quizQuestions'));
+        $categories = collect();
+        if (in_array($module, ['kursus','bootcamp'], true)) {
+            $usedCategoryIds = $rows->pluck('category_id')->filter()->unique();
+            $categories = DB::table('categories')
+                ->when(!auth()->user()->isAdmin(), fn ($q) => $q->where(function ($query) use ($usedCategoryIds) {
+                    $query->where('status', 'active')->orWhereIn('id', $usedCategoryIds);
+                }))
+                ->orderBy('name')->get();
+        }
+        return view('module', compact('module','config','rows','canCreate','quizQuestions','categories'));
     }
 
     public function store(Request $request, string $module)
@@ -102,7 +115,10 @@ class PortalController extends Controller
         abort_if($module === 'akun',405);
         abort_unless(in_array(auth()->user()->role, $config['roles'], true), 403);
         if ($module === 'sertifikat') abort_unless(auth()->user()->isAdmin(),403,'Hanya admin yang dapat menerbitkan sertifikat.');
-        $data = $request->validate($this->rules($module));
+        $rules = $this->rules($module);
+        if (auth()->user()->isInstitution() && in_array($module, ['kursus', 'bootcamp'], true)) unset($rules['institution_id']);
+        $data = $request->validate($rules);
+        if (in_array($module, ['kursus', 'bootcamp'])) $this->assertCategoryAvailable($data['category_id'] ?? null);
         if ($module === 'akun') {
             $data['email']=strtolower($data['email']);
             abort_if(DB::table('users')->where('email',$data['email'])->exists(),422,'Email sudah digunakan.');
@@ -120,6 +136,7 @@ class PortalController extends Controller
             if ($module === 'materi' || $module === 'kuis') $this->assertOwnedProgram($data, $module);
             if ($module === 'pengumuman') $data['audience'] = 'all';
         }
+        if ($module === 'materi') $this->storeMaterialAttachment($request, $data);
         $table = $config['table'];
         if (in_array($table, ['skills','material_notes','discussions','comments','reviews','bookmarks','material_progress','reports','enrollments'])) $data['user_id'] = auth()->id();
         if ($module === 'institusi' && !auth()->user()->isAdmin()) { $data['user_id'] = auth()->id(); $data['verification_status'] = 'pending'; }
@@ -152,7 +169,10 @@ class PortalController extends Controller
         }
         if ($module==='pendaftaran' && auth()->user()->role==='pelajar') { DB::table('enrollments')->where('id',$id)->update(['status'=>'cancelled','updated_at'=>now()]); return back()->with('success','Pendaftaran dibatalkan.'); }
         if ($module === 'sertifikat' && auth()->user()->isAdmin()) DB::table('certificates')->where('id',$id)->update(['revoked_at'=>now(),'revocation_reason'=>'Dibatalkan admin','updated_at'=>now()]);
-        else DB::table($config['table'])->where('id',$id)->delete();
+        else {
+            if ($module === 'materi') $this->deleteMaterialAttachment($row);
+            DB::table($config['table'])->where('id',$id)->delete();
+        }
         return back()->with('success', 'Data berhasil diproses.');
     }
 
@@ -176,7 +196,15 @@ class PortalController extends Controller
             if ($module==='kuis') $this->assertOwnedProgram(['material_id'=>$row->material_id],$module);
             if ($module==='soal') $this->assertOwnedQuiz($row->quiz_id);
         }
-        $data=$request->validate($this->rules($module));
+        $rules=$this->rules($module);
+        if (auth()->user()->isInstitution() && in_array($module, ['kursus', 'bootcamp'], true)) unset($rules['institution_id']);
+        $data=$request->validate($rules);
+        if (in_array($module, ['kursus', 'bootcamp'])) {
+            $currentCategoryId = $row->category_id ?? null;
+            $data['category_id'] = $request->input('category_id', $currentCategoryId);
+            if ($data['category_id'] === null || $data['category_id'] === '') $data['category_id'] = $currentCategoryId;
+            $this->assertCategoryAvailable($data['category_id'], $currentCategoryId);
+        }
         if ($module==='soal') { $data['options']=array_values(array_filter(array_map('trim',explode('|',$data['options'])))); abort_unless(isset($data['options'][$data['correct_option']]),422,'Nomor jawaban benar harus sesuai jumlah pilihan.'); }
         if ($module==='keterampilan') abort_if(DB::table('skills')->where('user_id',auth()->id())->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])->where('id','<>',$id)->exists(),422,'Keterampilan tersebut sudah ada di profil Anda.');
         if (in_array($module,['kursus','bootcamp']) && auth()->user()->isInstitution()) {
@@ -184,6 +212,7 @@ class PortalController extends Controller
             $data['institution_id']=$inst->id; unset($data['status']);
         }
         if (in_array($module,['materi','kuis']) && auth()->user()->isInstitution()) $this->assertOwnedProgram($data,$module);
+        if ($module === 'materi') $this->storeMaterialAttachment($request, $data, $row);
         DB::table($config['table'])->where('id',$id)->update($data+['updated_at'=>now()]);
         return back()->with('success','Perubahan berhasil disimpan.');
     }
@@ -193,7 +222,9 @@ class PortalController extends Controller
         abort_unless(auth()->user()->role === 'pelajar',403);
         $data = $request->validate(['program_type'=>'required|in:course,bootcamp','program_id'=>'required|integer']);
         $table = $data['program_type'] === 'course' ? 'courses' : 'bootcamps';
-        $program = DB::table($table)->where('id',$data['program_id'])->where('status','published')->first();
+        $program = DB::table($table)->where('id',$data['program_id'])->where('status','published')
+            ->whereIn('institution_id', DB::table('institutions')->where('is_active', true)->select('id'))
+            ->first();
         abort_unless($program, 404);
         DB::table('enrollments')->updateOrInsert(['user_id'=>auth()->id(),'program_type'=>$data['program_type'],'program_id'=>$program->id], ['status'=>'active','enrolled_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
         return back()->with('success','Pendaftaran berhasil.');
@@ -205,12 +236,13 @@ class PortalController extends Controller
         return view('certificate', compact('certificate'));
     }
 
-    public function verifyInstitution(Request $request, int $id)
+    private function assertCategoryAvailable($categoryId, $currentCategoryId = null): void
     {
-        abort_unless(auth()->user()->isAdmin(),403);
-        $data=$request->validate(['verification_status'=>'required|in:approved,rejected','verification_note'=>'nullable|string|max:2000']);
-        DB::table('institutions')->where('id',$id)->update($data+['updated_at'=>now()]);
-        return back()->with('success','Status verifikasi institusi diperbarui.');
+        if (auth()->user()->isAdmin() || $categoryId === null || $categoryId === '' || (string) $categoryId === (string) $currentCategoryId) {
+            return;
+        }
+
+        abort_unless(DB::table('categories')->where('id', $categoryId)->where('status', 'active')->exists(), 422, 'Kategori harus aktif.');
     }
 
     public function resolveReport(Request $request, int $id)
@@ -237,12 +269,25 @@ class PortalController extends Controller
         return back()->with('success', "Kuis dikumpulkan. Nilai Anda: {$score}.");
     }
 
+    public function downloadMaterial(int $id)
+    {
+        $config = $this->config('materi');
+        $material = $this->queryFor($config)->where('id', $id)->firstOrFail();
+        $filePath = $material->file_path ?? null;
+        abort_unless($filePath, 404, 'Berkas materi tidak tersedia.');
+        abort_unless(Storage::disk('local')->exists($filePath), 404, 'Berkas materi tidak ditemukan.');
+        return Storage::disk('local')->download($filePath, ($material->file_name ?? null) ?: 'materi');
+    }
+
     private function config(string $key): array { abort_unless(isset($this->modules[$key]),404); return $this->modules[$key]; }
     private function authorizeModule(string $module): void { abort_unless(in_array(auth()->user()->role,$this->config($module)['roles'],true),403); }
     private function rules(string $module): array
     {
-        $rules = ['name'=>'required|string|max:150','email'=>'required|email','role'=>'required|in:pelajar,institusi,admin','type'=>'nullable|string|max:100','description'=>'nullable|string','website'=>'nullable|url|max:255','title'=>'required|string|max:180','body'=>'nullable|string','institution_id'=>'required|integer|exists:institutions,id','category_id'=>'nullable|integer|exists:categories,id','status'=>'nullable|in:draft,published,archived','passing_score'=>'nullable|integer|min:0|max:100','program_type'=>'required_with:program_id|in:course,bootcamp','program_id'=>'required_with:program_type|integer','position'=>'nullable|integer|min:0','material_id'=>'required|integer|exists:materials,id','percent'=>'nullable|integer|min:0|max:100','completed'=>'nullable|boolean','quiz_id'=>'required|integer|exists:quizzes,id','prompt'=>'required|string','options'=>'required|string','correct_option'=>'required|integer|min:0','points'=>'required|integer|min:1','user_id'=>'nullable|integer|exists:users,id','rating'=>'required|integer|min:1|max:5','audience'=>'nullable|in:all,pelajar,institusi','content_type'=>'required|string|max:100','content_id'=>'required|integer','category'=>'required|string|max:100'];
+        $rules = ['name'=>'required|string|max:150','email'=>'required|email','role'=>'required|in:pelajar,institusi,admin','type'=>'nullable|string|max:100','description'=>'nullable|string','website'=>'nullable|url|max:255','title'=>'required|string|max:180','body'=>'nullable|string','institution_id'=>'required|integer|exists:institutions,id','category_id'=>'nullable|integer|exists:categories,id','status'=>'nullable|in:draft,published,archived','passing_score'=>'nullable|integer|min:0|max:100','program_type'=>'required_with:program_id|in:course,bootcamp','program_id'=>'required_with:program_type|integer','position'=>'nullable|integer|min:0','source_url'=>'nullable|url|max:2048','attachment'=>'nullable|file|mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,zip,mp4|max:10240','material_id'=>'required|integer|exists:materials,id','percent'=>'nullable|integer|min:0|max:100','completed'=>'nullable|boolean','quiz_id'=>'required|integer|exists:quizzes,id','prompt'=>'required|string','options'=>'required|string','correct_option'=>'required|integer|min:0','points'=>'required|integer|min:1','user_id'=>'nullable|integer|exists:users,id','rating'=>'required|integer|min:1|max:5','audience'=>'nullable|in:all,pelajar,institusi','content_type'=>'required|string|max:100','content_id'=>'required|integer','category'=>'required|string|max:100'];
         $selected = array_keys($this->config($module)['fields']); $out=[]; foreach ($selected as $key) if (isset($rules[$key])) $out[$key] = $rules[$key];
+        // Institusi tidak memilih ID institusinya sendiri. Nilai tersebut diisi
+        // otomatis dari akun yang sedang masuk setelah validasi formulir.
+        if (auth()->check() && auth()->user()->isInstitution() && in_array($module, ['kursus', 'bootcamp'], true)) unset($out['institution_id']);
         if ($module === 'ulasan') $out['rating']='required|integer|min:1|max:5';
         if ($module === 'forum' || $module === 'komentar' || $module === 'catatan' || $module === 'materi' || $module === 'pengumuman' || $module === 'laporan') $out['body']='required|string';
         return $out;
@@ -261,6 +306,19 @@ class PortalController extends Controller
         $quiz=DB::table('quizzes')->find($quizId); abort_unless($quiz,404);
         $this->assertOwnedProgram(['material_id'=>$quiz->material_id],'kuis');
     }
+    private function storeMaterialAttachment(Request $request, array &$data, ?object $oldMaterial = null): void
+    {
+        unset($data['attachment']);
+        if (!$request->hasFile('attachment')) return;
+        $file = $request->file('attachment');
+        $data['file_path'] = $file->store('materials', 'local');
+        $data['file_name'] = $file->getClientOriginalName();
+        if ($oldMaterial) $this->deleteMaterialAttachment($oldMaterial);
+    }
+    private function deleteMaterialAttachment(object $material): void
+    {
+        if (!empty($material->file_path)) Storage::disk('local')->delete($material->file_path);
+    }
     private function queryFor(array $config)
     {
         $query = DB::table($config['table']); $user = auth()->user();
@@ -274,7 +332,10 @@ class PortalController extends Controller
         if ($config['table'] === 'certificates' && !$user->isAdmin()) $query->where('user_id',$user->id);
         if ($config['table'] === 'institutions' && !$user->isAdmin()) $query->where('user_id',$user->id);
         if (in_array($config['table'], ['courses','bootcamps']) && $user->isInstitution()) $query->where('institution_id',optional($user->institution)->id ?? 0);
-        if (in_array($config['table'], ['courses','bootcamps']) && !$user->isAdmin() && !$user->isInstitution()) $query->where('status','published');
+        if (in_array($config['table'], ['courses','bootcamps']) && !$user->isAdmin() && !$user->isInstitution()) {
+            $query->where('status','published')
+                ->whereIn('institution_id', DB::table('institutions')->where('is_active', true)->select('id'));
+        }
         if (in_array($config['table'],['materials','quizzes','questions']) && !$user->isAdmin()) {
             $materialIds=[];
             if ($user->isInstitution()) {

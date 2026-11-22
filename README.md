@@ -36,6 +36,10 @@ Fondasi aplikasi pembelajaran berbasis web untuk proposal PPL Kelompok E. Aplika
 
 7. Buka `http://127.0.0.1:8000`.
 
+### Memperbarui proyek yang sudah memiliki database
+
+Jika Anda memperbarui salinan proyek lama, cadangkan database terlebih dahulu, pasang berkas kode terbaru, lalu jalankan `php artisan migrate` dari terminal VS Code. Migrasi ini menambahkan kolom yang diperlukan tanpa menghapus data. Jangan gunakan `php artisan migrate:fresh` pada database yang ingin dipertahankan karena perintah tersebut menghapus tabel dan seluruh datanya.
+
 ## Akun demo
 
 | Peran | Email | Kata sandi |
