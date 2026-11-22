@@ -2,53 +2,42 @@
 @section('content')
 <p><a href="/dashboard">← Dashboard</a></p><h1>{{ $config['title'] }}</h1><p class="muted">Data ditampilkan sesuai peran dan hak akses akun Anda.</p>
 @if($canCreate)
-<div class="card"><h2>Tambah {{ strtolower($config['title']) }}</h2><form method="post" action="/modul/{{ $module }}">@csrf<div class="grid">
+<div class="card"><h2>Tambah {{ strtolower($config['title']) }}</h2><form method="post" action="/modul/{{ $module }}" @if($module==='materi') enctype="multipart/form-data" @endif>@csrf<div class="grid">
 @foreach($config['fields'] as $field=>$label)
-    @if(!($field==='institution_id' && auth()->user()->isInstitution()))
-        <div><label>{{ $label }}</label>
-            @if(in_array($field,['body','description','prompt']))
-                <textarea name="{{ $field }}" rows="3" @required(in_array($field,['body','prompt']))></textarea>
-            @elseif($field==='category_id')
-                <select name="category_id"><option value="">— Pilih kategori —</option>
-                    @foreach($categories as $category)
-                        @if($category->status==='active')<option value="{{ $category->id }}">{{ $category->name }}</option>@endif
-                    @endforeach
-                </select>
-            @else
-                <input name="{{ $field }}" @required(in_array($field,['name','title','program_id','program_type','material_id','quiz_id','user_id','institution_id','options','correct_option','points','rating','content_type','content_id','category']))>
-            @endif
-        </div>
-    @endif
+@if(!($field==='institution_id' && auth()->user()->isInstitution()))
+<div><label>{{ $label }}</label>
+@if($field==='category_id')
+<select name="category_id"><option value="">Tanpa kategori</option>@foreach($categories as $category)@if($category->status==='active')<option value="{{ $category->id }}" @selected((string) old('category_id') === (string) $category->id)>{{ $category->name }}</option>@endif @endforeach</select>
+@elseif($field==='status' && in_array($module,['kursus','bootcamp'],true))
+<select name="status"><option value="draft" @selected(old('status','draft')==='draft')>Draft</option><option value="published" @selected(old('status')==='published')>Dipublikasikan</option><option value="archived" @selected(old('status')==='archived')>Diarsipkan</option></select>
+@elseif($field==='program_type' && $module==='materi')
+<select name="program_type" required><option value="course" @selected(old('program_type')==='course')>Kursus</option><option value="bootcamp" @selected(old('program_type')==='bootcamp')>Bootcamp</option></select>
+@elseif($field==='attachment' && $module==='materi')
+<input type="file" name="attachment" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.mp4"><small class="muted">PDF, Office, ZIP, atau MP4; maksimum 10 MB.</small>
+@elseif($field==='source_url' && $module==='materi')
+<input type="url" name="source_url" value="{{ old('source_url') }}" placeholder="https://...">
+@elseif($field==='position' && $module==='materi')
+<input type="number" min="0" name="position" value="{{ old('position',0) }}">
+@elseif(in_array($field,['body','description','prompt']))
+<textarea name="{{ $field }}" rows="3" @required(in_array($field,['body','prompt']))>{{ old($field) }}</textarea>
+@else
+<input name="{{ $field }}" value="{{ old($field) }}" @required(in_array($field,['name','title','program_id','program_type','material_id','quiz_id','user_id','institution_id','options','correct_option','points','rating','content_type','content_id','category']))>
+@endif
+</div>
+@endif
 @endforeach
 </div><button class="btn">Simpan</button></form></div>
 @endif
 <div class="card"><h2>Daftar data</h2>
 @if($rows->isEmpty())<p class="muted">Belum ada data.</p>@else<div style="overflow:auto"><table><thead><tr><th>ID</th>@foreach(array_keys($config['fields']) as $field)<th>{{ $config['fields'][$field] }}</th>@endforeach<th>Aksi</th></tr></thead><tbody>
-@foreach($rows as $row)<tr><td>{{ $row->id }}</td>@foreach(array_keys($config['fields']) as $field)<td>@php($value=$row->$field ?? '')@if($field==='verification_code' && $value)<a href="{{ route('certificate.verify',$value) }}">{{ $value }}</a>@elseif(is_array($value) || is_object($value)){{ json_encode($value) }}@else{{ Str::limit((string)$value,160) }}@endif</td>@endforeach<td class="actions">
+@foreach($rows as $row)<tr><td>{{ $row->id }}</td>@foreach(array_keys($config['fields']) as $field)<td>@php($value=$field==='attachment' ? ($row->file_name ?? '') : ($row->$field ?? ''))@if($field==='attachment' && $row->file_path)<a href="{{ route('material.file',$row->id) }}">{{ $row->file_name }}</a>@elseif($field==='source_url' && $value)<a href="{{ $value }}" target="_blank" rel="noopener">Buka tautan</a>@elseif($field==='verification_code' && $value)<a href="{{ route('certificate.verify',$value) }}">{{ $value }}</a>@elseif(is_array($value) || is_object($value)){{ json_encode($value) }}@else{{ Str::limit((string)$value,160) }}@endif</td>@endforeach<td class="actions">
 @if($module==='institusi' && auth()->user()->isAdmin())<a class="btn secondary" href="/admin/verifikasi-institusi/{{ $row->id }}">Verifikasi</a>@endif
 @if($module==='laporan' && auth()->user()->isAdmin())<form method="post" action="/admin/laporan/{{ $row->id }}/tindak-lanjut">@csrf<input type="hidden" name="status" value="resolved"><input type="hidden" name="resolution_note" value="Ditangani admin"><button class="btn">Selesaikan</button></form>@endif
 @if($module==='pendaftaran' && auth()->user()->role==='pelajar' && $row->status==='active')<form method="post" action="/modul/{{ $module }}/{{ $row->id }}">@csrf @method('DELETE')<button class="btn secondary">Batalkan</button></form>@endif
 @if($module==='akun' && auth()->user()->isAdmin())<details><summary>Edit akun</summary><form method="post" action="/modul/{{ $module }}/{{ $row->id }}">@csrf @method('PUT')<label>Nama</label><input name="name" value="{{ $row->name }}"><label>Email</label><input name="email" type="email" value="{{ $row->email }}"><label>Peran</label><select name="role"><option value="pelajar" @selected($row->role==='pelajar')>Pelajar</option><option value="institusi" @selected($row->role==='institusi')>Institusi</option><option value="admin" @selected($row->role==='admin')>Admin</option></select><button class="btn">Simpan akun</button></form></details>@endif
-@if(!in_array($module,['akun','sertifikat','pendaftaran','bookmark','progres','laporan']) && (auth()->user()->isAdmin() || in_array($module,['keterampilan','catatan','forum','komentar','ulasan'],true)))
-    <details><summary>Edit</summary><form method="post" action="/modul/{{ $module }}/{{ $row->id }}">@csrf @method('PUT')
-        @foreach($config['fields'] as $field=>$label)
-            <label>{{ $label }}</label>
-            @if($field==='category_id')
-                <select name="category_id">
-                    @if(!$row->category_id)<option value="">— Pilih kategori —</option>@endif
-                    @foreach($categories as $category)
-                        @if($category->status==='active' || (string)$row->category_id===(string)$category->id)
-                            <option value="{{ $category->id }}" @selected((string)($row->category_id ?? '')===(string)$category->id)>{{ $category->name }}@if($category->status!=='active') (nonaktif)@endif</option>
-                        @endif
-                    @endforeach
-                </select>
-            @else
-                <input name="{{ $field }}" value="{{ is_array($row->$field ?? null) ? implode('|',$row->$field) : ($row->$field ?? '') }}">
-            @endif
-        @endforeach
-        <button class="btn">Perbarui</button></form></details>
-@endif
-@if(auth()->user()->isAdmin() || in_array($module,['keterampilan','catatan','forum','komentar','ulasan','bookmark'],true))<form method="post" action="/modul/{{ $module }}/{{ $row->id }}">@csrf @method('DELETE')<button class="btn secondary">{{ $module==='sertifikat'?'Batalkan':'Hapus' }}</button></form>@endif
+@if($module==='materi' && (auth()->user()->isAdmin() || auth()->user()->isInstitution()))<details><summary>Edit</summary><form method="post" action="/modul/materi/{{ $row->id }}" enctype="multipart/form-data">@csrf @method('PUT')<label>Jenis program</label><select name="program_type"><option value="course" @selected($row->program_type==='course')>Kursus</option><option value="bootcamp" @selected($row->program_type==='bootcamp')>Bootcamp</option></select><label>ID program</label><input name="program_id" value="{{ $row->program_id }}" required><label>Judul materi</label><input name="title" value="{{ $row->title }}" required><label>Deskripsi materi</label><textarea name="body" rows="3" required>{{ $row->body }}</textarea><label>Tautan materi</label><input type="url" name="source_url" value="{{ $row->source_url }}"><label>Ganti berkas materi</label><input type="file" name="attachment" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.mp4"><label>Urutan</label><input type="number" min="0" name="position" value="{{ $row->position }}"><button class="btn">Perbarui</button></form></details>
+@elseif(!in_array($module,['akun','sertifikat','pendaftaran','bookmark','progres','laporan']) && (auth()->user()->isAdmin() || in_array($module,['keterampilan','catatan','forum','komentar','ulasan'],true)))<details><summary>Edit</summary><form method="post" action="/modul/{{ $module }}/{{ $row->id }}">@csrf @method('PUT')@foreach($config['fields'] as $field=>$label)<label>{{ $label }}</label>@if($field==='category_id')<select name="category_id"><option value="">Tanpa kategori</option>@foreach($categories as $category)@if($category->status==='active' || (string)$row->category_id===(string)$category->id)<option value="{{ $category->id }}" @selected((string)($row->category_id ?? '')===(string)$category->id)>{{ $category->name }}@if($category->status!=='active') (nonaktif)@endif</option>@endif @endforeach</select>@else<input name="{{ $field }}" value="{{ is_array($row->$field ?? null) ? implode('|',$row->$field) : ($row->$field ?? '') }}">@endif @endforeach<button class="btn">Perbarui</button></form></details>@endif
+@if(auth()->user()->isAdmin() || in_array($module,['keterampilan','catatan','forum','komentar','ulasan','bookmark','materi'],true))<form method="post" action="/modul/{{ $module }}/{{ $row->id }}">@csrf @method('DELETE')<button class="btn secondary">{{ $module==='sertifikat'?'Batalkan':'Hapus' }}</button></form>@endif
 </td></tr>
 @if($module==='kuis' && isset($quizQuestions[$row->id]))<tr><td colspan="100%"><form method="post" action="/kuis/{{ $row->id }}/kumpulkan">@csrf <strong>{{ $row->title }} · Kerjakan kuis</strong>@foreach($quizQuestions[$row->id] as $q)<fieldset><legend>{{ $q->prompt }}</legend>@foreach(json_decode($q->options,true) as $index=>$option)<label style="display:block;font-weight:400"><input type="radio" name="answers[{{ $q->id }}]" value="{{ $index }}" required style="display:inline;width:auto"> {{ $option }}</label>@endforeach</fieldset>@endforeach<button class="btn">Kumpulkan jawaban</button></form></td></tr>@endif
 @endforeach</tbody></table></div>@endif</div>

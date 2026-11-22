@@ -27,7 +27,12 @@ return new class extends Migration {
             DB::table('categories')->where('id', $row->id)->update(['slug' => $slug]);
         }
 
-        DB::statement('ALTER TABLE categories MODIFY slug VARCHAR(255) NOT NULL');
+        // SQLite (used by the feature tests) does not support MySQL's MODIFY
+        // syntax. The unique index still enforces slug uniqueness there; the
+        // production MySQL schema additionally makes the column non-null.
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement('ALTER TABLE categories MODIFY slug VARCHAR(255) NOT NULL');
+        }
         Schema::table('categories', function (Blueprint $table) {
             $table->unique('slug');
         });
