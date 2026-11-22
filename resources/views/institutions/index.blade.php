@@ -46,7 +46,7 @@
                             <td>{{ $institution->name }}</td>
                             <td>{{ $institution->type }}</td>
                             <td><span class="pill">{{ ['pending' => 'Menunggu', 'approved' => 'Disetujui', 'rejected' => 'Ditolak'][$institution->verification_status] ?? $institution->verification_status }}</span></td>
-                            <td><span class="pill">{{ $institution->is_active ? 'Aktif' : 'Nonaktif' }}</span></td>
+                            <td><span class="pill">{{ ($institution->is_active ?? true) ? 'Aktif' : 'Nonaktif' }}</span></td>
                             <td class="actions">
                                 <a class="btn secondary" href="/admin/institusi/{{ $institution->id }}">Detail</a>
                                 <a class="btn secondary" href="/admin/institusi/{{ $institution->id }}/ubah">Ubah</a>

@@ -24,8 +24,8 @@
                     @foreach($categories as $category)
                         <tr>
                             <td>{{ $category->name }}</td>
-                            <td>{{ $category->slug }}</td>
-                            <td><span class="pill">{{ $category->status === 'active' ? 'Aktif' : 'Nonaktif' }}</span></td>
+                            <td>{{ $category->slug ?? '—' }}</td>
+                            <td><span class="pill">{{ ($category->status ?? 'active') === 'active' ? 'Aktif' : 'Nonaktif' }}</span></td>
                             <td>{{ $category->description }}</td>
                             <td class="actions">
                                 <a class="btn secondary" href="/admin/kategori/{{ $category->id }}/ubah">Ubah</a>

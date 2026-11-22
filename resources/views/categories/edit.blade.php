@@ -12,10 +12,10 @@
         <textarea id="description" name="description" rows="4">{{ old('description', $category->description) }}</textarea>
         <label for="status">Status</label>
         <select id="status" name="status">
-            <option value="active" @selected(old('status', $category->status) === 'active')>Aktif</option>
-            <option value="inactive" @selected(old('status', $category->status) === 'inactive')>Nonaktif</option>
+            <option value="active" @selected(old('status', $category->status ?? 'active') === 'active')>Aktif</option>
+            <option value="inactive" @selected(old('status', $category->status ?? 'active') === 'inactive')>Nonaktif</option>
         </select>
-        <p class="muted">Slug saat ini: {{ $category->slug }}. Slug diperbarui otomatis dari nama saat disimpan.</p>
+        <p class="muted">Slug saat ini: {{ $category->slug ?? 'akan dibuat saat disimpan' }}. Slug diperbarui otomatis dari nama saat disimpan.</p>
         <button class="btn" type="submit">Simpan perubahan</button>
     </form>
 </div>

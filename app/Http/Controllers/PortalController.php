@@ -273,9 +273,10 @@ class PortalController extends Controller
     {
         $config = $this->config('materi');
         $material = $this->queryFor($config)->where('id', $id)->firstOrFail();
-        abort_unless($material->file_path, 404, 'Berkas materi tidak tersedia.');
-        abort_unless(Storage::disk('local')->exists($material->file_path), 404, 'Berkas materi tidak ditemukan.');
-        return Storage::disk('local')->download($material->file_path, $material->file_name ?: 'materi');
+        $filePath = $material->file_path ?? null;
+        abort_unless($filePath, 404, 'Berkas materi tidak tersedia.');
+        abort_unless(Storage::disk('local')->exists($filePath), 404, 'Berkas materi tidak ditemukan.');
+        return Storage::disk('local')->download($filePath, ($material->file_name ?? null) ?: 'materi');
     }
 
     private function config(string $key): array { abort_unless(isset($this->modules[$key]),404); return $this->modules[$key]; }

@@ -149,7 +149,7 @@ class MaterialApiController extends Controller
 
     private function withFileUrl(object $material): object
     {
-        $material->file_url = $material->file_path ? route('material.file', $material->id) : null;
+        $material->file_url = ($material->file_path ?? null) ? route('material.file', $material->id) : null;
         return $material;
     }
 

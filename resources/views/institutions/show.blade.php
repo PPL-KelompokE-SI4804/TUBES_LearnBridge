@@ -4,7 +4,7 @@
 <h1>{{ $institution->name }}</h1>
 <p>
     <span class="pill">{{ ['pending' => 'Menunggu', 'approved' => 'Disetujui', 'rejected' => 'Ditolak'][$institution->verification_status] ?? $institution->verification_status }}</span>
-    <span class="pill">{{ $institution->is_active ? 'Aktif' : 'Nonaktif' }}</span>
+    <span class="pill">{{ ($institution->is_active ?? true) ? 'Aktif' : 'Nonaktif' }}</span>
 </p>
 <div class="card">
     <p><strong>Jenis:</strong> {{ $institution->type ?: '—' }}</p>
